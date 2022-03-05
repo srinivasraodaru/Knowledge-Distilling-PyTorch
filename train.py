@@ -9,6 +9,9 @@ from loss import loss_kd
 from dataloader import get_loader
 from utils import Params
 
+import wandb
+wandb.init(project="CSE251B")
+
 torch.manual_seed(0)
 
 parser = argparse.ArgumentParser()
@@ -18,11 +21,11 @@ parser.add_argument('-m', '--model_name', type=str, default='base', help='the na
 parser.add_argument('-t', '--teacher_name', type=str, default=None, help='the name of backbone network')
 parser.add_argument('--log_path', type=str, default='logs', help="directory to save train log")
 parser.add_argument('--epoch', type=int, default=0, help='value of current epoch')
-parser.add_argument('--num_epoch', type=int, default=90, help='the number of epoch in train')
+parser.add_argument('--num_epoch', type=int, default=100, help='the number of epoch in train')
 parser.add_argument('--decay_epoch', type=int, default=30, help='the number of decay epoch in train')
 parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help="path to saved models (to continue training)")
-parser.add_argument('--num_classes', type=int, default=100, help='the number of classes')
-parser.add_argument('--dataset', type=str, default='cifar100', help='the name of dataset')
+parser.add_argument('--num_classes', type=int, default=10, help='the number of classes')
+parser.add_argument('--dataset', type=str, default='cifar10', help='the name of dataset')
 parser.add_argument('--is_distill', type=bool, default=True)
 args = parser.parse_args()
 
@@ -40,7 +43,8 @@ if __name__ == '__main__':
     teacher.load_params(os.path.join(args.checkpoint_dir, args.dataset, teacher_params.model_name, f'final.pth'))
 
     summary_title = f'{student_params.teacher_name}_teaches_{student_params.model_name} '
-
+    wandb.config.update({"title":summary_title})
+    
     if not os.path.exists(os.path.join(args.checkpoint_dir, args.dataset, student_params.model_name)):
         os.makedirs(os.path.join(args.checkpoint_dir, args.dataset, student_params.model_name))
     if not os.path.exists(args.log_path):
@@ -55,11 +59,27 @@ if __name__ == '__main__':
 
     teacher_train_ans = teacher.fetch_output(train_loader)
     teacher_val_ans = teacher.fetch_output(validation_loader)
-
+    
+    ###early_stop variable
+    v_loss_ref = float('inf')
+    early_stop = 5
+    early_stop_count = 0
+    
     for iter in range(args.epoch, args.num_epoch):
         train_loss, train_acc = student.train_model(train_loader, criterion, optimizer, teacher_train_ans, student_params)
         validation_loss, validation_acc = student.validate_model(validation_loader, criterion, teacher_val_ans, student_params)
         writer.add_scalars(f'{summary_title}/Loss', {'train': train_loss, 'val': validation_loss}, iter)
         writer.add_scalars(f'{summary_title}/Accuracy', {'train': train_acc, 'val': validation_acc}, iter)
         torch.save(student.state_dict(), os.path.join(args.checkpoint_dir, args.dataset, student_params.model_name, f'{iter}.pth'))
+        wandb.log({'train_accuracy': train_acc, 'train_loss': train_loss})
+        wandb.log({'validation_accuracy': validation_acc, 'validation_loss': validation_loss})
+        
+        if validation_loss>v_loss_ref:
+            early_stop_count += 1
+            if(early_stop_count==early_stop):
+                break
+        else:
+            early_stop_count = 0
+            v_loss_ref = validation_loss
+        
         scheduler.step()
