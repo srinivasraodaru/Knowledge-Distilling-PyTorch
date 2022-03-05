@@ -27,6 +27,7 @@ parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help="p
 parser.add_argument('--num_classes', type=int, default=10, help='the number of classes')
 parser.add_argument('--dataset', type=str, default='cifar10', help='the name of dataset')
 parser.add_argument('--is_distill', type=bool, default=True)
+parser.add_argument('--run_name', type=str, default="no_name")
 args = parser.parse_args()
 
 if __name__ == '__main__':
@@ -43,7 +44,7 @@ if __name__ == '__main__':
     teacher.load_params(os.path.join(args.checkpoint_dir, args.dataset, teacher_params.model_name, f'final.pth'))
 
     summary_title = f'{student_params.teacher_name}_teaches_{student_params.model_name} '
-    wandb.config.update({"title":summary_title})
+    wandb.config.update({'title':summary_title, 'learning rate':student_params.lr, 'alpha': student_params.alpha})
     
     if not os.path.exists(os.path.join(args.checkpoint_dir, args.dataset, student_params.model_name)):
         os.makedirs(os.path.join(args.checkpoint_dir, args.dataset, student_params.model_name))
@@ -73,7 +74,7 @@ if __name__ == '__main__':
         torch.save(student.state_dict(), os.path.join(args.checkpoint_dir, args.dataset, student_params.model_name, f'{iter}.pth'))
         wandb.log({'train_accuracy': train_acc, 'train_loss': train_loss})
         wandb.log({'validation_accuracy': validation_acc, 'validation_loss': validation_loss})
-        
+        wandb.init(name=args.run_name)
         if validation_loss>v_loss_ref:
             early_stop_count += 1
             if(early_stop_count==early_stop):
